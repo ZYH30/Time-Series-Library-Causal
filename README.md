@@ -1,4 +1,11 @@
-# Time Series Library (TSLib)
+# Time Series Library (TSLib) with Causal Model
+
+This project provides the practical code accompanying the paper. It forks a repository (https://github.com/thuml/Time-Series-Library) containing a comprehensive collection of state-of-the-art open-source time series forecasting algorithms for conducting comparative experiments. To ensure a fair comparison, all models adhere to identical data processing and model evaluation protocols. The following is the execution guide for the model proposed in the paper: After installing the configuration files according to the instructions in the original project below, the quick-run interface is as follows:
+```bash
+   bash runLSTMCausalPostAttAd.sh
+```
+Below are the original project guidelines:
+
 TSLib is an open-source library for deep learning researchers, especially for deep time series analysis.
 
 > **中文文档**：[README_zh.md](./README_zh.md)
