@@ -1,4 +1,3 @@
-# 文件路径: Time-Series-Library/models/LSTMCausalAd.py
 import torch
 import torch.nn.functional as F
 from torch import nn as nn
@@ -95,16 +94,15 @@ class FeatureTower(nn.Module):
 
         self.use_id_embedding = num_ids is not None
 
-        # ID嵌入层
+        # ID
         if self.use_id_embedding:
             self.id_embedding = nn.Embedding(num_ids, id_embedding_size)
-            # 调整encoder和decoder的输入大小以包含ID嵌入
+            # encoder decoder
             input_size += id_embedding_size
             forward_input_size += id_embedding_size
         else:
             self.id_embedding = None
 
-        # 编码器
         self.encoder = LSTMEncoder(
             input_size=input_size,
             hidden_size=hidden_size,
@@ -113,7 +111,6 @@ class FeatureTower(nn.Module):
         )
         self.outNet = nn.Linear(hidden_size, 1)
 
-        # 解码器
         if step_forward > 1 and forward_input_size > 0:
             self.decoder = LSTMDecoder(
                 input_size=forward_input_size,
@@ -126,7 +123,6 @@ class FeatureTower(nn.Module):
                 self.decoder_outNet = nn.Linear(hidden_size, 1)
 
     def _concat_id_embedding(self, x, ids):
-        """将ID嵌入拼接到输入特征"""
         if self.use_id_embedding:
             id_emb = self.id_embedding(ids)  # (batch_size, id_embedding_size)
             id_emb = id_emb.unsqueeze(1)  # (batch_size, 1, id_embedding_size)
@@ -135,11 +131,9 @@ class FeatureTower(nn.Module):
         return x
 
     def _process_feat(self, X, X_forward, ids):
-        # 处理ID嵌入（拼接到X）
         if self.use_id_embedding:
             X = self._concat_id_embedding(X, ids)
 
-        # 处理输入特征
         if self.forward_input_size > 0:
             if self.past_input_size > 0:
                 seq_len = X.size(1)
@@ -155,15 +149,12 @@ class FeatureTower(nn.Module):
     def forward(self, X=None, X_forward=None, ids=None, is_training=False):
         X_concat, seq_len = self._process_feat(X, X_forward, ids)
 
-        # 编码器
         outs, h, c = self.encoder(X_concat)
         preds = self.outNet(outs)
 
-        # 单步预测
         if self.step_forward == 1 or self.forward_input_size <= 0:
             return outs, preds
 
-        # 多步预测
         if is_training:
             x = X_forward[:, seq_len + 1: seq_len + self.step_forward, :]
             if self.use_id_embedding:
@@ -301,10 +292,14 @@ class Model(nn.Module):
         covariate_dim = configs.enc_in - 1 
         
         # 2. TSlib 的 timeF 'h' 频率默认生成 4 维时间特征
-        forward_dim = 4 
+        if len(configs.forward_features) > 0:
+            # forward_dim = 4
+            self.forward_dim = 4
+        else:
+            self.forward_dim = 0
         
         # ⚠️ 【核心修复点】 ⚠️：计算拼接后的总输入维度 (11 + 4 = 15)
-        total_feature_input_size = covariate_dim + forward_dim
+        total_feature_input_size = covariate_dim + self.forward_dim
         
         self.feature_tower = FeatureTower(
             input_size=total_feature_input_size,  # <--- 必须传入总维度 15
@@ -312,7 +307,7 @@ class Model(nn.Module):
             num_layers=configs.num_layers,
             step_forward=configs.pred_len,
             past_input_size=covariate_dim,
-            forward_input_size=forward_dim,
+            forward_input_size=self.forward_dim,
             share_outNet=configs.share_outNet,
             dropout_rate=configs.dropout
         )
@@ -324,7 +319,7 @@ class Model(nn.Module):
             num_layers=configs.num_layers,
             step_forward=configs.pred_len,
             past_input_size=covariate_dim,
-            forward_input_size=forward_dim,
+            forward_input_size=self.forward_dim,
             share_outNet=configs.share_outNet,
             dropout_rate=configs.dropout
         )
@@ -343,9 +338,12 @@ class Model(nn.Module):
         full_y = torch.cat([y_past, y_future], dim=1) 
         
         # 3. 构造完整的连续时间特征序列 (历史 + 未来) 满足 FeatureTower
-        future_mark = x_mark_dec[:, -self.pred_len:, :]
-        full_mark = torch.cat([x_mark_enc, future_mark], dim=1) 
-        
+        if self.forward_dim > 0:
+            future_mark = x_mark_dec[:, -self.pred_len:, :]
+            full_mark = torch.cat([x_mark_enc, future_mark], dim=1) 
+        else:
+            full_mark = None
+            
         # 4. 因果对抗双塔前向流
         # 特征塔接收完整的协变量与时间标签
         out_x, pred_x = self.feature_tower(X=X_covariates, X_forward=full_mark, is_training=self.training)
@@ -356,5 +354,3 @@ class Model(nn.Module):
         
         # 5. 同时返回 pred_x 和截断后的 pred_y 严格截断为未来 H 步预测以对接 TSlib 评估模块
         return pred_x, pred_y[:, -self.pred_len:, :]
-
-    
