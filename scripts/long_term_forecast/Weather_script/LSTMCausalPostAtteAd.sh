@@ -17,7 +17,7 @@ do
         --is_training 1 \
         --root_path ./dataset/weather/ \
         --data_path weather.csv \
-        --model_id weather_96_$pred_len_causal \
+        --model_id causal_weather_96_$pred_len \
         --model LSTMCausalPostAttentionAd \
         --features MS \
         --target OT \
